@@ -3073,16 +3073,94 @@ export default function HomePage() {
   const importFileRef = useRef(null);
   const [importMsg, setImportMsg] = useState('');
 
+  const normalizeCode = (value) => String(value || '').trim();
+  const normalizeNumber = (value) => {
+    if (value === null || value === undefined || value === '') return null;
+    const num = Number(value);
+    return Number.isFinite(num) ? num : null;
+  };
+
   function getComparablePayload(payload) {
     if (!payload || typeof payload !== 'object') return '';
+    const rawFunds = Array.isArray(payload.funds) ? payload.funds : [];
+    const fundCodes = rawFunds
+      .map((fund) => normalizeCode(fund?.code || fund?.CODE))
+      .filter(Boolean);
+    const uniqueFundCodes = Array.from(new Set(fundCodes)).sort();
+
+    const favorites = Array.isArray(payload.favorites)
+      ? Array.from(new Set(payload.favorites.map(normalizeCode).filter((code) => uniqueFundCodes.includes(code)))).sort()
+      : [];
+
+    const collapsedCodes = Array.isArray(payload.collapsedCodes)
+      ? Array.from(new Set(payload.collapsedCodes.map(normalizeCode).filter((code) => uniqueFundCodes.includes(code)))).sort()
+      : [];
+
+    const groups = Array.isArray(payload.groups)
+      ? payload.groups
+          .map((group) => {
+            const id = normalizeCode(group?.id);
+            if (!id) return null;
+            const name = typeof group?.name === 'string' ? group.name : '';
+            const codes = Array.isArray(group?.codes)
+              ? Array.from(new Set(group.codes.map(normalizeCode).filter((code) => uniqueFundCodes.includes(code)))).sort()
+              : [];
+            return { id, name, codes };
+          })
+          .filter(Boolean)
+          .sort((a, b) => a.id.localeCompare(b.id))
+      : [];
+
+    const holdingsSource = payload.holdings && typeof payload.holdings === 'object' && !Array.isArray(payload.holdings)
+      ? payload.holdings
+      : {};
+    const holdings = {};
+    Object.keys(holdingsSource)
+      .map(normalizeCode)
+      .filter((code) => uniqueFundCodes.includes(code))
+      .sort()
+      .forEach((code) => {
+        const value = holdingsSource[code] || {};
+        const share = normalizeNumber(value.share);
+        const cost = normalizeNumber(value.cost);
+        if (share === null && cost === null) return;
+        holdings[code] = { share, cost };
+      });
+
+    const pendingTrades = Array.isArray(payload.pendingTrades)
+      ? payload.pendingTrades
+          .map((trade) => {
+            const fundCode = normalizeCode(trade?.fundCode);
+            if (!fundCode) return null;
+            return {
+              id: trade?.id ? String(trade.id) : '',
+              fundCode,
+              type: trade?.type || '',
+              share: normalizeNumber(trade?.share),
+              amount: normalizeNumber(trade?.amount),
+              feeRate: normalizeNumber(trade?.feeRate),
+              feeMode: trade?.feeMode || '',
+              feeValue: normalizeNumber(trade?.feeValue),
+              date: trade?.date || '',
+              isAfter3pm: !!trade?.isAfter3pm
+            };
+          })
+          .filter((trade) => trade && uniqueFundCodes.includes(trade.fundCode))
+          .sort((a, b) => {
+            const keyA = a.id || `${a.fundCode}|${a.type}|${a.date}|${a.share ?? ''}|${a.amount ?? ''}|${a.feeMode}|${a.feeValue ?? ''}|${a.feeRate ?? ''}|${a.isAfter3pm ? 1 : 0}`;
+            const keyB = b.id || `${b.fundCode}|${b.type}|${b.date}|${b.share ?? ''}|${b.amount ?? ''}|${b.feeMode}|${b.feeValue ?? ''}|${b.feeRate ?? ''}|${b.isAfter3pm ? 1 : 0}`;
+            return keyA.localeCompare(keyB);
+          })
+      : [];
+
     return JSON.stringify({
-      funds: Array.isArray(payload.funds) ? payload.funds : [],
-      favorites: Array.isArray(payload.favorites) ? payload.favorites : [],
-      groups: Array.isArray(payload.groups) ? payload.groups : [],
-      collapsedCodes: Array.isArray(payload.collapsedCodes) ? payload.collapsedCodes : [],
+      funds: uniqueFundCodes,
+      favorites,
+      groups,
+      collapsedCodes,
       refreshMs: Number.isFinite(payload.refreshMs) ? payload.refreshMs : 30000,
-      holdings: payload.holdings && typeof payload.holdings === 'object' ? payload.holdings : {},
-      pendingTrades: Array.isArray(payload.pendingTrades) ? payload.pendingTrades : []
+      holdings,
+      pendingTrades
     });
   }
 
