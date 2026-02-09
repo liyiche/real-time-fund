@@ -11,7 +11,7 @@ import Announcement from "./components/Announcement";
 import { DatePicker, DonateTabs, NumericInput, Stat } from "./components/Common";
 import { ChevronIcon, CloseIcon, CloudIcon, DragIcon, ExitIcon, GridIcon, ListIcon, LoginIcon, LogoutIcon, MailIcon, PlusIcon, RefreshIcon, SettingsIcon, SortIcon, StarIcon, TrashIcon, UpdateIcon, UserIcon } from "./components/Icons";
 import githubImg from "./assets/github.svg";
-import { supabase } from './lib/supabase';
+import { supabase, isSupabaseConfigured } from './lib/supabase';
 import { fetchFundData, fetchLatestRelease, fetchShanghaiIndexDate, fetchSmartFundNetValue, searchFunds, submitFeedback } from './api/fund';
 import packageJson from '../package.json';
 
@@ -2280,6 +2280,15 @@ export default function HomePage() {
     }, 3000);
   };
 
+  const handleOpenLogin = () => {
+    setUserMenuOpen(false);
+    if (!isSupabaseConfigured) {
+      showToast('未配置 Supabase，无法登录', 'error');
+      return;
+    }
+    setLoginModalOpen(true);
+  };
+
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
   const [cloudConfigModal, setCloudConfigModal] = useState({ open: false, userId: null });
   const syncDebounceRef = useRef(null);
@@ -2514,6 +2523,11 @@ export default function HomePage() {
 
   // 初始化认证状态监听
   useEffect(() => {
+    if (!isSupabaseConfigured) {
+      setUser(null);
+      setUserMenuOpen(false);
+      return;
+    }
     const clearAuthState = () => {
       setUser(null);
       setUserMenuOpen(false);
@@ -2580,7 +2594,7 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    if (!user?.id) return;
+    if (!isSupabaseConfigured || !user?.id) return;
     const channel = supabase
       .channel(`user-configs-${user.id}`)
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'user_configs', filter: `user_id=eq.${user.id}` }, async (payload) => {
@@ -2607,6 +2621,10 @@ export default function HomePage() {
     e.preventDefault();
     setLoginError('');
     setLoginSuccess('');
+    if (!isSupabaseConfigured) {
+      showToast('未配置 Supabase，无法登录', 'error');
+      return;
+    }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!loginEmail.trim()) {
@@ -2647,6 +2665,10 @@ export default function HomePage() {
       setLoginError('请输入邮箱中的验证码');
       return;
     }
+    if (!isSupabaseConfigured) {
+      showToast('未配置 Supabase，无法登录', 'error');
+      return;
+    }
     try {
       setLoginLoading(true);
       const { data, error } = await supabase.auth.verifyOtp({
@@ -2672,6 +2694,16 @@ export default function HomePage() {
   // 登出
   const handleLogout = async () => {
     isLoggingOutRef.current = true;
+    if (!isSupabaseConfigured) {
+      setLoginModalOpen(false);
+      setLoginError('');
+      setLoginSuccess('');
+      setLoginEmail('');
+      setLoginOtp('');
+      setUserMenuOpen(false);
+      setUser(null);
+      return;
+    }
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (session) {
@@ -3599,10 +3631,7 @@ export default function HomePage() {
                     <>
                       <button
                         className="user-menu-item"
-                        onClick={() => {
-                          setUserMenuOpen(false);
-                          setLoginModalOpen(true);
-                        }}
+                        onClick={handleOpenLogin}
                       >
                         <LoginIcon width="16" height="16" />
                         <span>登录</span>
