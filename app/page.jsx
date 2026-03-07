@@ -3179,13 +3179,15 @@ export default function HomePage() {
   const fetchCloudConfig = async (userId, checkConflict = false) => {
     if (!userId) return;
     try {
-      const { data, error } = await supabase
+      const { data: meta, error: metaError } = await supabase
         .from('user_configs')
-        .select('id, data, updated_at')
+        .select('id, updated_at')
         .eq('user_id', userId)
         .maybeSingle();
-      if (error) throw error;
-      if (!data?.id) {
+
+      if (metaError) throw metaError;
+
+      if (!meta?.id) {
         const { error: insertError } = await supabase
           .from('user_configs')
           .insert({ user_id: userId });
@@ -3193,6 +3195,20 @@ export default function HomePage() {
         setCloudConfigModal({ open: true, userId, type: 'empty' });
         return;
       }
+
+      const localUpdatedAt = window.localStorage.getItem('localUpdatedAt');
+      if (localUpdatedAt && meta.updated_at && new Date(meta.updated_at) <= new Date(localUpdatedAt)) {
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from('user_configs')
+        .select('id, data, updated_at')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if (error) throw error;
+
       if (data?.data && isPlainObject(data.data) && Object.keys(data.data).length > 0) {
         const localPayload = collectLocalPayload();
         const localComparable = getComparablePayload(localPayload);
